@@ -42,6 +42,27 @@ bool smsInit() {
     return true;
 }
 
+void smsModemSleep() {
+    // SIM800L sleep mode — stays registered on network, draws ~1mA instead of ~20mA
+    modem.sendAT("+CSCLK=2");
+    modem.waitResponse();
+    Serial.println("[SMS] Modem sleeping");
+}
+
+void smsModemWake() {
+    // Toggle DTR low to wake — on V1.3 we pulse PWRKEY briefly instead
+    digitalWrite(MODEM_PWRKEY, LOW);
+    delay(100);
+    digitalWrite(MODEM_PWRKEY, HIGH);
+    delay(500);
+    modem.sendAT("+CSCLK=0");
+    modem.waitResponse();
+    if (!modem.isNetworkConnected()) {
+        modem.waitForNetwork(10000);
+    }
+    Serial.println("[SMS] Modem awake");
+}
+
 bool smsSend(const char* number, const char* message) {
     if (!modem.isNetworkConnected()) {
         Serial.println("[SMS] Not connected, retrying network...");

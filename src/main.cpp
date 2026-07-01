@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <esp_sleep.h>
 #include "config.h"
 #include "ignition.h"
 #include "motion.h"
@@ -13,6 +14,21 @@ typedef enum {
 
 static AlarmState state = STATE_IDLE;
 static unsigned long motionStartTime = 0;
+static bool modemAsleep = false;
+
+static void enterArmed() {
+    Serial.println("[STATE] → ARMED");
+    smsModemSleep();
+    modemAsleep = true;
+    state = STATE_ARMED;
+}
+
+static void exitArmed() {
+    if (modemAsleep) {
+        smsModemWake();
+        modemAsleep = false;
+    }
+}
 
 void setup() {
     Serial.begin(115200);
@@ -32,30 +48,36 @@ void setup() {
 }
 
 void loop() {
-    bool bikeOn   = ignitionOn();
-    bool moving   = motionDetected();
+    bool bikeOn = ignitionOn();
+    bool moving  = motionDetected();
     unsigned long now = millis();
 
     switch (state) {
 
         case STATE_IDLE:
             if (!bikeOn) {
-                Serial.println("[STATE] → ARMED");
-                state = STATE_ARMED;
+                enterArmed();
             }
             break;
 
         case STATE_ARMED:
             if (bikeOn) {
+                exitArmed();
                 Serial.println("[STATE] → IDLE (ignition on)");
                 state = STATE_IDLE;
                 break;
             }
             if (moving) {
+                exitArmed();
                 Serial.println("[STATE] → TIMING (movement detected)");
                 motionStartTime = now;
                 state = STATE_TIMING;
+                break;
             }
+            // No movement — light sleep to save power, wake and re-check
+            Serial.flush();
+            esp_sleep_enable_timer_wakeup((uint64_t)SLEEP_INTERVAL_MS * 1000ULL);
+            esp_light_sleep_start();
             break;
 
         case STATE_TIMING:
@@ -65,9 +87,8 @@ void loop() {
                 break;
             }
             if (!moving) {
-                // Movement stopped — could be sidestand, not a theft
                 Serial.println("[STATE] → ARMED (movement stopped)");
-                state = STATE_ARMED;
+                enterArmed();
                 break;
             }
             if (now - motionStartTime >= MOTION_TIMEOUT_MS) {

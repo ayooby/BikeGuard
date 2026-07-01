@@ -34,3 +34,7 @@
 
 // How often we sample the MPU6050 (ms)
 #define MOTION_SAMPLE_MS    200
+
+// How long ESP32 light-sleeps between motion checks when ARMED (ms)
+// Lower = faster response, higher = less power draw
+#define SLEEP_INTERVAL_MS   3000
