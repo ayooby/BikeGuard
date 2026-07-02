@@ -1,84 +1,192 @@
 # BikeGuard
 
-Motorcycle theft detector built on the TTGO T-Call V1.3 (ESP32 + SIM800L). Detects movement when the ignition is off and sends an SMS alert.
+BikeGuard is a motorcycle/car anti-theft project with two firmware tracks:
 
-## Hardware
+- A9G track (most complete right now)
+- ESP32 + SIM800L track (still under development)
 
-| Component | Role | Status |
-|---|---|---|
-| TTGO T-Call V1.3 | ESP32 brain + SIM800L for SMS | Purchased |
-| MPU6050 (GY-521) | Motion detection via accelerometer | Purchased |
-| MP1584EN buck converter | 12V to 5V power from bike battery | Purchased |
-| LiPo 3.7V, 500-1000mAh, JST-PH 2mm | Backup power when bike is disconnected | To buy |
-| 47kΩ + 10kΩ resistors | Ignition voltage divider | To buy |
-| Dupont jumper wires | Prototype wiring | To buy |
-| Lebara DK nano SIM | SMS carrier | To buy |
-| Project enclosure | Weather protection | To buy |
+This README reflects what currently exists in this repository.
 
-## Wiring
+## Repository Layout
 
-| Connection | GPIO |
-|---|---|
-| MPU6050 SDA | 14 |
-| MPU6050 SCL | 15 |
-| Ignition sense | 35 |
+- `src/a9g/src/bikeguard.c`: A9G implementation (single integrated source file)
+- `src/a9g/Makefile`: A9G demo build file (for Ai-Thinker GPRS C SDK workflow)
+- `src/esp/`: ESP modules (`config`, `ignition`, `motion`, `sms`, `sleep`)
+- `platformio.ini`: ESP PlatformIO environments
 
-**Ignition sense circuit** — 12V switched line through a voltage divider before GPIO 35:
+## Hardware Section: A9G (Current Main Logic)
+
+Status: active and feature-rich prototype.
+
+### What it does now
+
+From the current logic in `src/a9g/src/bikeguard.c`:
+
+1. Boots and waits for system + network ready events.
+2. Initializes SMS stack when the network is registered.
+3. Reads MPU6050 accelerometer over I2C2.
+4. Reads ignition input on GPIO25.
+5. Uses arming grace (20s) after ignition goes OFF.
+6. Learns motion baseline, then checks delta threshold.
+7. Requires consecutive motion hits before alarm.
+8. Sends SMS alert with motion values.
+9. Opens GPS on alarm, waits for fix (up to 30s), appends Google Maps link if available.
+10. Applies SMS cooldown (15s) to reduce spam.
+11. Supports remote mute command from owner number:
+   - `MUTE <minutes>`
+   - `MUTE 0` to clear mute
+
+### A9G Behavior Summary
+
+- Guard OFF when ignition is ON.
+- Guard arms after ignition OFF + grace period.
+- Motion while armed triggers SMS (unless muted/cooldown).
+- GPS is opened only during alert flow, then closed for better power behavior.
+
+### A9G Wiring Logic
+
+This reflects the current A9G logic in `src/a9g/src/bikeguard.c`:
+
+- MPU6050 is read on I2C2 at address `0x68`
+- Ignition sense input is on `GPIO25`
+
+Recommended wiring logic:
+
+```text
+Bike 12V Battery (+) --------------------> Buck Converter IN+
+Bike GND --------------------------------> Buck Converter IN-
+
+Buck 5V OUT+ ----------------------------> A9G VUSB (or board 5V input)
+Buck GND --------------------------------> A9G GND
+
+Bike switched 12V (ignition line)
+    |
+   47k
+    |
+    +-------------------------------------> A9G GPIO25 (ignition sense)
+    |
+   10k
+    |
+   GND
+
+MPU6050 VCC -----------------------------> A9G 3V3 (or module-safe VCC)
+MPU6050 GND -----------------------------> A9G GND
+MPU6050 SDA -----------------------------> A9G I2C2_SDA pin
+MPU6050 SCL -----------------------------> A9G I2C2_SCL pin
+MPU6050 AD0 -----------------------------> GND (addr 0x68) or 3V3 (addr 0x69)
 ```
-12V (switched) ── 47kΩ ──┬── GPIO 35
-                         │
-                        10kΩ
-                         │
-                        GND
-```
 
-That divider gives about 2.1V at GPIO 35 from a 12V line, and about 2.5V when the charging system is closer to 14.4V. Keep the 47kΩ resistor on the 12V side and the 10kΩ resistor on the ground side.
+Notes:
 
-Reserved TTGO T-Call GPIOs: 4, 5, 21, 22, 23, 26, 27.
+- Keep all grounds common (bike power, A9G, MPU6050).
+- The ignition line must go through a divider before entering GPIO.
+- Use a stable supply path; GSM burst current can be high.
 
-Power the board from the always-on 12V (before the key switch) through the buck converter. The key-switched line is only used as a signal.
+### A9G Programming App and SDK
 
-## How it works
+For A9G, PlatformIO is not the flashing toolchain. Use:
 
-```
-IDLE (ignition on)
-  └─ ignition off → ARMED
-        └─ movement detected → TIMING (10s timeout)
-              └─ still moving → ALERT → SMS sent
-              └─ movement stops → ARMED
-        └─ ignition on → IDLE
-```
+1. Editor: VS Code (or any editor) for code changes.
+2. Compiler/Build system: Ai-Thinker GPRS C SDK.
+3. Flash/Download tool: CoolWatcher/serial download flow used by the SDK ecosystem.
 
-The timeout avoids false alerts when putting the bike on the sidestand or loading it.
+Official SDK links:
 
-## Config
+- SDK repo: https://github.com/Ai-Thinker-Open/GPRS_C_SDK
+- SDK releases: https://github.com/Ai-Thinker-Open/GPRS_C_SDK/releases
+- SDK docs: https://ai-thinker-open.github.io/GPRS_C_SDK_DOC/zh/
 
-Edit `src/config.h` before flashing:
-
-```c
-#define ALERT_PHONE  "+45xxxxxxxx"   // your number
-```
-
-All thresholds and pin assignments are in the same file.
-
-## Development
-
-**Requirements:** VS Code + PlatformIO extension
+Typical Windows compile flow:
 
 ```bash
-# Build
+cd GPRS_C_SDK
+build.bat demo motion_test
+```
+
+That generates firmware artifacts from the demo module (for example `.lod`), then you flash using the A9G download/debug tooling.
+
+## Hardware Section: ESP32 + SIM800L (Under Development)
+
+Status: under development, not final.
+
+Current ESP source exists in `src/esp/` and includes:
+
+- `motion.cpp`: MPU6050 initialization and delta-based movement detection
+- `ignition.cpp`: ignition sensing input logic
+- `sms.cpp`: SIM800L init/send/sleep/wake abstraction
+- `sleep.cpp`: light sleep helper
+- `config.h`: pins, phone number, and motion/sleep tuning constants
+
+### Important note
+
+The ESP folder contains building blocks and partial behavior, but it is not marked complete yet. Treat it as work in progress compared to the A9G flow.
+
+## Build and Development
+
+### ESP (PlatformIO)
+
+Use PlatformIO environments from `platformio.ini`:
+
+```bash
 pio run
-
-# Flash
 pio run --target upload
-
-# Serial monitor (115200 baud)
 pio device monitor
 ```
 
-State transitions are printed to serial so you can verify behaviour before mounting on the bike.
+### A9G
 
-## Roadmap
+A9G code here is structured for Ai-Thinker GPRS C SDK style builds (`demo/motion_test` style Makefile). It is not flashed from PlatformIO directly.
 
-- [ ] GPS location in SMS alert
-- [ ] Backup LiPo auto-arm when main power is cut
+## Future Improvements (To Add Later)
+
+### 1) Receiver number update over SMS with PIN code
+
+Add secure owner/receiver update command, for example:
+
+- `SETPHONE <PIN> <NUMBER>`
+
+Expected behavior:
+
+- Validate sender and PIN.
+- Update stored receiver number.
+- Persist it so it survives reboot.
+- Send ACK/NACK SMS with reason.
+
+### 2) Current status command over SMS
+
+Add status request command, for example:
+
+- `STATUS <PIN>`
+
+Status reply should include:
+
+- Location (if GPS fix is available)
+- Power source (main power vs battery)
+- Battery percentage (if measurable)
+- Battery voltage
+
+Suggested unified status format:
+
+- `STATUS: power=BATTERY, battery=62%, vbat=3.92V, gps=55.6761,12.5683`
+- If no fix: `gps=NA`
+
+### 3) Low battery warning SMS at thresholds
+
+When running on battery, send warning SMS at:
+
+- 40%
+- 30%
+- 20%
+- 10%
+
+Each warning message should use the same format as the STATUS response so it is consistent and easy to parse/read.
+
+Example:
+
+- `STATUS: power=BATTERY, battery=30%, vbat=3.70V, gps=55.6761,12.5683`
+
+## Project Direction
+
+- Keep A9G as the reference implementation for full alarm behavior.
+- Continue ESP implementation until feature parity is reached.
+- Add secure SMS command set and battery-aware reporting before production use.
