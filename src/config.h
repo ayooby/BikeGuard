@@ -17,7 +17,8 @@
 #define MPU_SCL         15
 
 // ── Ignition sense ───────────────────────────────────────────────────────────
-// 12V switched line → 10kΩ / 47kΩ voltage divider → ~2.4V at GPIO
+// 12V switched line → 47kΩ high-side / 10kΩ low-side divider → ~2.1V at GPIO
+// 14.4V charging voltage gives ~2.5V, still safe for the ESP32 input.
 // GPIO 35 is input-only, no internal pull-up/down — safe for this use
 #define IGNITION_PIN    35
 

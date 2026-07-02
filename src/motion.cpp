@@ -1,6 +1,20 @@
 #include "motion.h"
 #include "config.h"
 #include <Arduino.h>
+
+#ifdef BIKEGUARD_NO_MPU
+
+bool motionInit() {
+    Serial.println("[MOTION] Bench mode: MPU6050 disabled");
+    return true;
+}
+
+bool motionDetected() {
+    return false;
+}
+
+#else
+
 #include <Wire.h>
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
@@ -9,6 +23,7 @@
 static Adafruit_MPU6050 mpu;
 static float lastMagnitude = 0.0f;
 static unsigned long lastSampleTime = 0;
+static bool lastMovementDetected = false;
 
 bool motionInit() {
     Wire.begin(MPU_SDA, MPU_SCL);
@@ -38,7 +53,7 @@ bool motionInit() {
 bool motionDetected() {
     unsigned long now = millis();
     if (now - lastSampleTime < MOTION_SAMPLE_MS) {
-        return false;
+        return lastMovementDetected;
     }
     lastSampleTime = now;
 
@@ -53,6 +68,9 @@ bool motionDetected() {
 
     float delta = fabsf(magnitude - lastMagnitude);
     lastMagnitude = magnitude;
+    lastMovementDetected = delta > MOTION_THRESHOLD;
 
-    return delta > MOTION_THRESHOLD;
+    return lastMovementDetected;
 }
+
+#endif

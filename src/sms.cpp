@@ -2,7 +2,31 @@
 #include "config.h"
 #include <Arduino.h>
 
-#define TINY_GSM_MODEM_SIM800
+#ifdef BIKEGUARD_NO_SMS
+
+bool smsInit() {
+    Serial.println("[SMS] Bench mode: modem disabled");
+    return true;
+}
+
+void smsModemSleep() {
+    Serial.println("[SMS] Bench mode: modem sleep skipped");
+}
+
+void smsModemWake() {
+    Serial.println("[SMS] Bench mode: modem wake skipped");
+}
+
+bool smsSend(const char* number, const char* message) {
+    Serial.print("[SMS] Bench mode: would send to ");
+    Serial.print(number);
+    Serial.print(": ");
+    Serial.println(message);
+    return true;
+}
+
+#else
+
 #include <TinyGsmClient.h>
 
 HardwareSerial modemSerial(1);
@@ -80,3 +104,5 @@ bool smsSend(const char* number, const char* message) {
     }
     return ok;
 }
+
+#endif

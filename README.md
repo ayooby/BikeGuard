@@ -4,12 +4,16 @@ Motorcycle theft detector built on the TTGO T-Call V1.3 (ESP32 + SIM800L). Detec
 
 ## Hardware
 
-| Component | Role |
-|---|---|
-| TTGO T-Call V1.3 | ESP32 brain + SIM800L for SMS |
-| MPU6050 (GY-521) | Motion detection via accelerometer |
-| MP1584EN buck converter | 12V → 5V power from bike battery |
-| LiPo 3.7V (JST-PH 2mm) | Backup power when bike is disconnected |
+| Component | Role | Status |
+|---|---|---|
+| TTGO T-Call V1.3 | ESP32 brain + SIM800L for SMS | Purchased |
+| MPU6050 (GY-521) | Motion detection via accelerometer | Purchased |
+| MP1584EN buck converter | 12V to 5V power from bike battery | Purchased |
+| LiPo 3.7V, 500-1000mAh, JST-PH 2mm | Backup power when bike is disconnected | To buy |
+| 47kΩ + 10kΩ resistors | Ignition voltage divider | To buy |
+| Dupont jumper wires | Prototype wiring | To buy |
+| Lebara DK nano SIM | SMS carrier | To buy |
+| Project enclosure | Weather protection | To buy |
 
 ## Wiring
 
@@ -21,12 +25,16 @@ Motorcycle theft detector built on the TTGO T-Call V1.3 (ESP32 + SIM800L). Detec
 
 **Ignition sense circuit** — 12V switched line through a voltage divider before GPIO 35:
 ```
-12V (switched) ── 10kΩ ──┬── GPIO 35
+12V (switched) ── 47kΩ ──┬── GPIO 35
                          │
-                        47kΩ
+                        10kΩ
                          │
                         GND
 ```
+
+That divider gives about 2.1V at GPIO 35 from a 12V line, and about 2.5V when the charging system is closer to 14.4V. Keep the 47kΩ resistor on the 12V side and the 10kΩ resistor on the ground side.
+
+Reserved TTGO T-Call GPIOs: 4, 5, 21, 22, 23, 26, 27.
 
 Power the board from the always-on 12V (before the key switch) through the buck converter. The key-switched line is only used as a signal.
 

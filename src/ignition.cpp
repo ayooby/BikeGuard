@@ -10,7 +10,11 @@ void ignitionInit() {
 }
 
 bool ignitionOn() {
-    // Voltage divider gives ~2.4V when 12V present (HIGH)
+#ifdef BIKEGUARD_FORCE_IGNITION_OFF
+    return false;
+#else
+    // Voltage divider gives ~2.1V when 12V present (HIGH)
     // Gives 0V when ignition off (LOW)
     return digitalRead(IGNITION_PIN) == HIGH;
+#endif
 }
