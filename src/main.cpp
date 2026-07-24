@@ -1,9 +1,9 @@
 #include <Arduino.h>
-#include <esp_sleep.h>
 #include "config.h"
 #include "ignition.h"
 #include "motion.h"
 #include "sms.h"
+#include "sleep.h"
 
 typedef enum {
     STATE_IDLE,    // bike is on — not monitoring
@@ -76,8 +76,7 @@ void loop() {
             }
             // No movement — light sleep to save power, wake and re-check
             Serial.flush();
-            esp_sleep_enable_timer_wakeup((uint64_t)SLEEP_INTERVAL_MS * 1000ULL);
-            esp_light_sleep_start();
+            boardSleep();
             break;
 
         case STATE_TIMING:
