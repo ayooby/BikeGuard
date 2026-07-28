@@ -1,9 +1,18 @@
 #pragma once
 
-#if defined(BOARD_A9G)
-#include "a9g/sms.h"
-#elif defined(BOARD_ESP)
-#include "esp/sms.h"
-#else
-#error "Please define BOARD_A9G or BOARD_ESP in build flags"
-#endif
+#include <Arduino.h>
+
+struct SmsCommand {
+	String from;
+	String body;
+	int index;
+};
+
+bool modemInit();
+bool modemEnsureNetwork();
+bool smsSend(const char* number, const String& message);
+size_t smsPollUnread(SmsCommand* outCommands, size_t maxCommands);
+void smsDeleteIndex(int index);
+void modemEnterSleep();
+void modemExitSleep();
+String modemGetSignalAndPowerStatus();

@@ -1,3 +1,3 @@
 #pragma once
 
-void boardSleep();
+void boardDeepSleep(uint32_t seconds);
