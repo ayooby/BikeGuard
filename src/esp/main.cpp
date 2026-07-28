@@ -8,6 +8,7 @@
 #include <esp_sleep.h>
 
 RTC_DATA_ATTR bool guardArmed = false;
+RTC_DATA_ATTR bool manualDisarm = false;
 RTC_DATA_ATTR uint32_t graceRemainingSec = ARMING_GRACE_SECONDS;
 RTC_DATA_ATTR uint32_t muteRemainingSec = 0;
 RTC_DATA_ATTR uint32_t alertCooldownSec = 0;
@@ -58,6 +59,18 @@ void processCommand(const SmsCommand& cmd, esp_sleep_wakeup_cause_t wakeCause) {
         } else {
             String value = body.substring(spacePos + 1);
             value.trim();
+            bool allDigits = value.length() > 0;
+            for (size_t ci = 0; ci < value.length(); ++ci) {
+                if (!isdigit(static_cast<unsigned char>(value[ci]))) {
+                    allDigits = false;
+                    break;
+                }
+            }
+            if (!allDigits) {
+                (void)smsSend(ALERT_PHONE, "MUTE ERROR");
+                smsDeleteIndex(cmd.index);
+                return;
+            }
             int minutes = value.toInt();
             if (minutes < 0 || minutes > MAX_MUTE_MINUTES) {
                 (void)smsSend(ALERT_PHONE, "MUTE RANGE 0-1440");
@@ -74,11 +87,13 @@ void processCommand(const SmsCommand& cmd, esp_sleep_wakeup_cause_t wakeCause) {
         sendStatusReply(cmd.from, wakeCause);
     } else if (body == "ARM ON") {
         guardArmed = true;
+        manualDisarm = false;
         graceRemainingSec = 0;
         (void)smsSend(ALERT_PHONE, "ARMED");
     } else if (body == "ARM OFF") {
         guardArmed = false;
-        graceRemainingSec = ARMING_GRACE_SECONDS;
+        manualDisarm = true;
+        graceRemainingSec = 0;
         (void)smsSend(ALERT_PHONE, "DISARMED");
     } else if (body == "PING") {
         (void)smsSend(ALERT_PHONE, "PONG");
@@ -92,7 +107,13 @@ void processCommand(const SmsCommand& cmd, esp_sleep_wakeup_cause_t wakeCause) {
 void updateGuardFromIgnition() {
     if (ignitionOn()) {
         guardArmed = false;
+        manualDisarm = false;
         graceRemainingSec = ARMING_GRACE_SECONDS;
+        return;
+    }
+
+    if (manualDisarm) {
+        guardArmed = false;
         return;
     }
 
@@ -154,19 +175,25 @@ void setup() {
         Serial.println("[BOOT] motion init failed");
     }
 
-    if (!modemInit()) {
-        Serial.println("[BOOT] modem init failed");
+    if (wakeCause == ESP_SLEEP_WAKEUP_UNDEFINED) {
+        if (!modemInit()) {
+            Serial.println("[BOOT] modem init failed");
+        }
+    } else {
+        modemPreparePinsForWake();
+        if (!modemWake()) {
+            Serial.println("[BOOT] modem wake failed");
+        }
     }
-
-    modemExitSleep();
     updateGuardFromIgnition();
-    maybeSendMotionAlert(wakeCause);
 
     SmsCommand commands[6];
     size_t cmdCount = smsPollUnread(commands, 6);
     for (size_t i = 0; i < cmdCount; ++i) {
         processCommand(commands[i], wakeCause);
     }
+
+    maybeSendMotionAlert(wakeCause);
 
     decayTimers(PARK_TIMER_WAKE_SECONDS);
 

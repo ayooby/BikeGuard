@@ -27,7 +27,7 @@ static constexpr const char* ALERT_PHONE = "+450000000";
 static constexpr uint32_t MODEM_BAUD = 115200;
 static constexpr uint32_t NETWORK_WAIT_MS = 30000;
 
-static constexpr uint32_t ARMING_GRACE_SECONDS = 20;
+static constexpr uint32_t ARMING_GRACE_SECONDS = 31;
 static constexpr uint32_t ALERT_COOLDOWN_SECONDS = 15;
 static constexpr uint32_t PARK_TIMER_WAKE_SECONDS = 30;
 

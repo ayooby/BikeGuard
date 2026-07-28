@@ -19,21 +19,27 @@ bool setBoostKeepOn() {
     return Wire.endTransmission() == 0;
 }
 
-void setupModemPins() {
+void setupModemPins(bool pulsePwrKey) {
     pinMode(MODEM_RST_PIN, OUTPUT);
     digitalWrite(MODEM_RST_PIN, HIGH);
 
     pinMode(MODEM_PWRKEY_PIN, OUTPUT);
     pinMode(MODEM_POWER_ON_PIN, OUTPUT);
+    pinMode(MODEM_DTR_PIN, OUTPUT);
 
     digitalWrite(MODEM_POWER_ON_PIN, HIGH);
+    digitalWrite(MODEM_DTR_PIN, LOW);
 
-    // Verified from LilyGO utilities.h: HIGH -> LOW(1s) -> HIGH
-    digitalWrite(MODEM_PWRKEY_PIN, HIGH);
-    delay(100);
-    digitalWrite(MODEM_PWRKEY_PIN, LOW);
-    delay(1000);
-    digitalWrite(MODEM_PWRKEY_PIN, HIGH);
+    if (pulsePwrKey) {
+        // Verified from LilyGO utilities.h: HIGH -> LOW(1s) -> HIGH
+        digitalWrite(MODEM_PWRKEY_PIN, HIGH);
+        delay(100);
+        digitalWrite(MODEM_PWRKEY_PIN, LOW);
+        delay(1000);
+        digitalWrite(MODEM_PWRKEY_PIN, HIGH);
+    } else {
+        digitalWrite(MODEM_PWRKEY_PIN, HIGH);
+    }
 }
 
 bool atSend(const String& cmd, String* response, uint32_t timeoutMs = 3000) {
@@ -95,6 +101,8 @@ bool parseCmglHeader(const String& line, int* indexOut, String* fromOut) {
     idxText.trim();
     *indexOut = idxText.toInt();
 
+    // Skip past the status field ("REC UNREAD") to land on the open-quote of
+    // the phone number field.
     int quotePos = line.indexOf('"', firstComma + 1);
     for (int i = 0; i < 2 && quotePos >= 0; ++i) {
         quotePos = line.indexOf('"', quotePos + 1);
@@ -103,16 +111,13 @@ bool parseCmglHeader(const String& line, int* indexOut, String* fromOut) {
         return false;
     }
 
-    int phoneStart = line.indexOf('"', quotePos + 1);
-    if (phoneStart < 0) {
-        return false;
-    }
-    int phoneEnd = line.indexOf('"', phoneStart + 1);
+    // quotePos is now the open-quote of the phone number field.
+    int phoneEnd = line.indexOf('"', quotePos + 1);
     if (phoneEnd < 0) {
         return false;
     }
 
-    *fromOut = line.substring(phoneStart + 1, phoneEnd);
+    *fromOut = line.substring(quotePos + 1, phoneEnd);
     fromOut->trim();
     return *indexOut > 0 && !fromOut->isEmpty();
 }
@@ -124,7 +129,7 @@ bool modemInit() {
         Serial.println("[PMU] IP5306 keep-on write failed");
     }
 
-    setupModemPins();
+    setupModemPins(true);
     modemSerial.begin(MODEM_BAUD, SERIAL_8N1, MODEM_RX_PIN, MODEM_TX_PIN);
     delay(6000);
 
@@ -150,6 +155,32 @@ bool modemInit() {
 
     Serial.print("[MODEM] ");
     Serial.println(modem.getModemInfo());
+    return true;
+}
+
+bool modemWake() {
+    // After deep sleep the ESP32 cold-boots, so restore the control pins and
+    // UART without replaying the power-key pulse used for cold power-on.
+    if (!setBoostKeepOn()) {
+        Serial.println("[PMU] IP5306 keep-on write failed");
+    }
+
+    setupModemPins(false);
+    modemSerial.begin(MODEM_BAUD, SERIAL_8N1, MODEM_RX_PIN, MODEM_TX_PIN);
+    delay(200);
+
+    // DTR low wakes SIM800L from AT+CSCLK=2 sleep without a full restart.
+    digitalWrite(MODEM_DTR_PIN, LOW);
+    delay(50);
+
+    modemExitSleep();
+
+    if (!modem.waitForNetwork(NETWORK_WAIT_MS)) {
+        Serial.println("[MODEM] network not ready after wake");
+        return false;
+    }
+
+    Serial.println("[MODEM] wake ok");
     return true;
 }
 
@@ -228,11 +259,17 @@ void smsDeleteIndex(int index) {
 }
 
 void modemEnterSleep() {
+    digitalWrite(MODEM_DTR_PIN, HIGH);
     (void)atSend("AT+CSCLK=2", nullptr, 3000);
 }
 
 void modemExitSleep() {
+    digitalWrite(MODEM_DTR_PIN, LOW);
     (void)atSend("AT+CSCLK=0", nullptr, 3000);
+}
+
+void modemPreparePinsForWake() {
+    setupModemPins(false);
 }
 
 String modemGetSignalAndPowerStatus() {

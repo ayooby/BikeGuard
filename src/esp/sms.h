@@ -9,6 +9,7 @@ struct SmsCommand {
 };
 
 bool modemInit();
+bool modemWake();
 bool modemEnsureNetwork();
 bool smsSend(const char* number, const String& message);
 size_t smsPollUnread(SmsCommand* outCommands, size_t maxCommands);
@@ -16,3 +17,4 @@ void smsDeleteIndex(int index);
 void modemEnterSleep();
 void modemExitSleep();
 String modemGetSignalAndPowerStatus();
+void modemPreparePinsForWake();
